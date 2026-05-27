@@ -10,7 +10,7 @@ This guide explains every section of the TCP throughput benchmark — line by li
 
 ```makefile
 CXX := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -O2
+CXXFLAGS := -std=c++17 -Wall -Wextra -O3
 ```
 
 **Why g++?** The university lab machines run Linux with GCC. No cross-platform concerns — we stripped Windows support because it added dead weight.
@@ -19,7 +19,7 @@ CXXFLAGS := -std=c++17 -Wall -Wextra -O2
 
 **Why `-Wall -Wextra`?** Catches implicit sign conversions, unused variables, and missing returns at compile time. Zero warnings is a hard requirement.
 
-**Why `-O2`?** Throughput benchmarks must run at production speed. Measuring unoptimized code would produce meaningless numbers — the bottleneck would be the compiler's debug instrumentation, not the network.
+**Why `-O3`?** A throughput benchmark must run at maximum speed. `-O3` enables aggressive function inlining, loop vectorization, and inter-procedural optimizations beyond `-O2`. We are measuring the network, not the compiler's ability to generate safe debug code. Any cycle spent in suboptimal code inflates the measurement.
 
 ### Build targets
 
@@ -50,19 +50,16 @@ common.o: common.cpp common.h
 ```cpp
 constexpr int DEFAULT_PORT = 12345;
 constexpr int LISTEN_BACKLOG = 5;
-constexpr size_t WARMUP_SIZE = 1048576;   // 1 MB
-constexpr int WARMUP_COUNT = 8;
+constexpr int WARMUP_MSGS = 100;  // per-size warmup messages to saturate TCP slow-start
 ```
 
 **Why hardcode the port?** The exercise spec requires it — the server takes no arguments, the client takes only the server IP. A single port simplifies the auto-tester script.
 
 **Why backlog = 5?** We only ever accept one client. The backlog value is essentially unused, but POSIX requires *some* positive value. 5 is the traditional minimum.
 
-**Why warmup with 1 MB messages?** TCP slow-start begins with a congestion window of ~10 segments (≈14 KB). After each successful RTT, the window doubles. To saturate a window large enough for our biggest test message (1 MB), we need the window to reach at least 1 MB. Sending 8 messages of 1 MB each forces the congestion window to open fully within the first few RTTs, regardless of the initial window size.
+**Why 100 warmup messages per size?** TCP slow-start begins with a congestion window of ~10 segments (≈14 KB). After each successful RTT, the window doubles. Per-size warmup ensures the window is fully open before each timed batch. This is important because the lecturer noted there may be TCP-level dynamics we don't fully understand that benefit from per-size warmup. 100 messages is enough to saturate the window for all sizes — for 1B messages that's only 100 bytes of warmup, while for 1MB messages it provides 100MB of warmup to fully open a large window.
 
-**Why 8 warmup messages?** Each 1 MB message consumes one window's worth of data at the point the window reaches 1 MB. By the 3rd or 4th message, the window is fully open. 8 messages provides margin for networks with larger initial windows or higher latency, without adding significant runtime (8 MB is negligible compared to the total benchmark data volume).
-
-**Why one-time warmup instead of per-size warmup?** Earlier versions warmed up before every message size. This caused a measurement error: the server received warmup + timed messages as one batch and only ACKed after both. The client's timer, which started after warmup send, included the warmup transmission time in the elapsed measurement. Moving to one-time warmup at connection start eliminated this skew entirely. The TCP congestion window is per-connection, not per-message-size — once open, it stays open.
+**Why per-size instead of one-time warmup?** Earlier versions used a single warmup phase at connection start (8×1MB messages). The lecturer advised that per-size warmup is more robust — there may be TCP dynamics beyond simple congestion-window opening that affect different message sizes differently. The key fix: the server now receives warmup and timed messages in **separate loops**, only ACKing after the timed batch. This prevents warmup transmission time from contaminating the throughput measurement.
 
 ### Message size generation
 
@@ -82,7 +79,7 @@ inline const size_t MSG_COUNTS[] = { ... };
 
 **Why do the counts decrease as message size increases?** Smaller messages have higher per-system-call overhead: for 1-byte messages, the `send()` syscall cost dominates, so we need many iterations (~100K) to get a stable timing measurement. For 1 MB messages, a single `send()` already transfers substantial data, so fewer iterations (~100) suffice. This keeps total runtime under 30 seconds.
 
-**How were these counts chosen?** Using the convergence detector (`find_counts()` in `client.cpp`, inside `#if 0`). It starts with a small count and doubles until measured throughput varies by less than 1% between iterations. The output tells us the minimum count needed for stable measurements at each size.
+**How were these counts chosen?** Using the convergence detector (`find_counts()` in `client.cpp`, inside `#if 0`). For each message size, it starts with a small count and doubles until measured throughput varies by less than 1% between consecutive counts. The output tells us the minimum count needed for stable measurements at each size. The convergence checks variance between **different counts** (not repeated runs of the same count), because we're finding the point where increasing the count no longer meaningfully changes the measured throughput.
 
 ### ThroughputResult
 
@@ -248,21 +245,19 @@ int nodelay = 1;
 setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 ```
 
-**Why on the accepted socket too?** The server sends 8-byte ACK messages after each batch. Without `TCP_NODELAY`, Nagle's algorithm could delay these ACKs by up to 200ms. This would inflate the client's measured elapsed time (since the timer runs until the ACK arrives), producing artificially low throughput. This is a recent fix — earlier versions missed this.
+**Why on the accepted socket too?** The server sends 8-byte ACK messages after each batch. Without `TCP_NODELAY`, Nagle's algorithm could delay these ACKs by up to 200ms. This would inflate the client's measured elapsed time (since the timer runs until the ACK arrives), producing artificially low throughput.
 
-### One-time warmup receive
+### Per-size warmup receive
 
 ```cpp
-char* warmup_buf = new char[WARMUP_SIZE];
-for (int w = 0; w < WARMUP_COUNT; w++) {
-    recv_full(client_fd, warmup_buf, WARMUP_SIZE);
+for (int w = 0; w < WARMUP_MSGS; w++) {
+    recv_full(client_fd, buf, size);
 }
-delete[] warmup_buf;
 ```
 
-**Why receive and discard?** The client sends 8 warmup messages of 1 MB each immediately after connecting. The server must consume this data from the TCP stream before the timed batches begin. The content doesn't matter — it's just there to open the congestion window. Using `new[]`/`delete[]` for the buffer because `WARMUP_SIZE` (1 MB) is too large for the stack.
+**Why receive and discard?** The client sends 100 warmup messages of the current test size before each timed batch. The server must consume this data from the TCP stream before the timed batch begins. By receiving warmup in a **separate loop** from timed messages, the server ensures all warmup bytes are drained before the timed data is processed. This prevents warmup transmission time from being included in the client's timer measurement.
 
-### Per-size receive loop
+### Per-size timed receive
 
 ```cpp
 for (size_t j = 0; j < count; j++) {
@@ -270,17 +265,18 @@ for (size_t j = 0; j < count; j++) {
 }
 ```
 
-**Why allocate a new buffer each iteration?** Each message size is different (1B through 1MB). Allocating exactly `size` bytes is correct — it matches what the client sends. Using `new[]`/`delete[]` per iteration is acceptable because the outer loop has only 21 iterations.
+**Why a separate loop from warmup?** This is the critical fix for measurement accuracy. The client's timer starts after warmup send and stops after ACK. If the server mixed warmup and timed messages in one loop (as earlier versions did), the ACK would only be sent after *both* were received — meaning the timer would include warmup transmission time. By separating the loops, the server only ACKs the timed batch, and the warmup bytes are fully consumed before the timed data arrives at the server.
 
-### ACK calculation
+### ACK
 
 ```cpp
-uint64_t ack = static_cast<uint64_t>(size) * count;
+uint64_t ack = 0;
+send_full(client_fd, &ack, sizeof(ack));
 ```
 
-**Why cast before multiplication?** On 32-bit platforms, `size_t` is 32 bits. `size * count` could overflow before assignment to `uint64_t`. Casting `size` to `uint64_t` first forces 64-bit multiplication, which is safe for any realistic values.
+**Why send zero instead of computing `size * count`?** The ACK value is never validated by the client — it exists purely as a synchronization barrier to tell the client "I've received everything for this batch." Computing the total bytes was wasted work. Sending a constant zero keeps the protocol structure (the client blocks on `recv_full` for 8 bytes) without the unnecessary arithmetic.
 
-**Why send an ACK at all?** The ACK serves two purposes: (1) it synchronizes the protocol — the server signals "I've received everything for this batch, proceed to the next," and (2) the client uses it to stop the timer, measuring the full round-trip including server processing time.
+**Why keep 8 bytes instead of reducing to 1?** Protocol consistency. The `uint64_t` ACK is a fixed-size field. Changing to a single byte would save 7 bytes per batch (147 bytes total across 21 batches) — negligible.
 
 ---
 
@@ -296,7 +292,9 @@ void find_counts(int fd) { ... }
 
 **Why is this commented out?** This function is not part of the normal benchmark. It's a development tool used once to determine the optimal `MSG_COUNTS` values, then disabled. The `#if 0` / `#endif` preserves the code for future re-tuning without cluttering the compiled binary.
 
-**How does it work?** For each message size, it starts with 10 messages and doubles until throughput variance between iterations falls below 1%. This finds the minimum count that produces stable measurements — balancing accuracy against runtime.
+**How does it work?** For each message size, it starts with 10 messages and doubles until throughput variance between consecutive counts falls below 1%. This finds the minimum count that produces stable measurements — balancing accuracy against runtime. The variance is measured between **different counts** (current vs previous, which was half the size), not between repeated runs of the same count. The idea: if throughput at count=100 is nearly identical to throughput at count=200, then count=100 is already stable — increasing it further won't change the result.
+
+**Why does it include its own warmup?** The convergence detector runs as a standalone function replacing `main()`. It needs to handle its own warmup to get accurate per-count measurements.
 
 ### Command-line parsing
 
@@ -309,19 +307,17 @@ if (argc != 2) {
 
 **Why only the server IP?** Per the exercise spec. The port is hardcoded. The auto-tester expects exactly this interface.
 
-### One-time warmup send
+### Per-size warmup send
 
 ```cpp
-char* warmup_buf = new char[WARMUP_SIZE];
-memset(warmup_buf, 0, WARMUP_SIZE);
-for (int w = 0; w < WARMUP_COUNT; w++) {
-    send_full(fd, warmup_buf, WARMUP_SIZE);
+for (int w = 0; w < WARMUP_MSGS; w++) {
+    send_full(fd, buf, size);
 }
 ```
 
-**Why zero the buffer?** The content of warmup messages is irrelevant — they exist only to fill the TCP pipe. Zeroing is the simplest initialization and costs ~1ms for 1 MB, negligible for 8 iterations.
+**Why per-size warmup?** The lecturer advised that there may be TCP-level dynamics beyond simple congestion-window opening that affect different message sizes differently. Per-size warmup ensures the path is fully saturated before each batch, regardless of message size. For small messages, 100×1B = 100 bytes of warmup; for large messages, 100×1MB = 100MB of warmup.
 
-**Why one-time rather than per-size?** Earlier versions warmed up before each message size. This introduced a measurement error because the server had to receive the warmup bytes before ACKing the timed batch. The timer included warmup transmission time in the elapsed measurement. Moving warmup to connection start eliminates this cross-contamination: once the TCP window is open, every timed batch measures only the data it's supposed to.
+**Why before the timer?** The warmup exists to saturate the TCP window. If we included it in the timer, the measurement would capture the slow-start ramp-up rather than steady-state throughput. By sending warmup before `start = now()`, we measure only the steady-state portion.
 
 ### Timed batch
 
@@ -340,9 +336,9 @@ auto end = std::chrono::high_resolution_clock::now();
 
 **Why `high_resolution_clock`?** Provides the best available timer resolution (typically nanoseconds on modern Linux). For small messages, the timed batch can complete in microseconds — we need precision to get meaningful measurements.
 
-**Why does the timer include the ACK wait?** This is intentional. Stopping the timer after receiving the server's ACK measures the full network round-trip, not just the client's send rate. This captures the network path rather than just the local TCP stack's buffer-accept speed.
+**Why does the timer include the ACK wait?** This is intentional. Stopping the timer after receiving the server's ACK measures the full network round-trip, not just the client's send rate. The server only sends the ACK after receiving all timed messages (the warmup was already drained in the separate warmup loop). This captures the network path rather than just the local TCP stack's buffer-accept speed.
 
-**Why is the ACK value never checked?** The ACK exists purely for synchronization — it tells the client "done with this batch." The value itself (`size * count`) is sent but not verified because both sides share the same `MSG_COUNTS` array (guaranteed by the `static_assert` and `assert` guards). Validating the value would catch memory corruption but not protocol errors.
+**Why is the ACK value never checked?** The ACK exists purely for synchronization — it tells the client "done with this batch." The value is irrelevant. Both sides share the same `MSG_COUNTS` array (guaranteed by `static_assert` and `assert` guards), so message counts can't diverge.
 
 ### Output format
 
@@ -387,16 +383,50 @@ printf("%zu\t%.2f\t%s\n", size, result.value, result.unit.c_str());
 
 ---
 
+## Key Protocol: Warmup → Timed → ACK Pipeline
+
+For each message size, the protocol executes:
+
+```
+CLIENT                              SERVER
+  |                                   |
+  |--- warmup msg 1 (size) ---------->|  } 
+  |--- warmup msg 2 (size) ---------->|  } WARMUP_MSGS messages
+  |        ...                        |  } received and discarded
+  |--- warmup msg 100 (size) -------->|  }
+  |                                   |
+  |  start = now()                    |
+  |                                   |
+  |--- timed msg 1 (size) ----------->|  }
+  |--- timed msg 2 (size) ----------->|  } MSG_COUNTS[i] messages
+  |        ...                        |  } received in timed loop
+  |--- timed msg N (size) ----------->|  }
+  |                                   |
+  |                        ACK <------|  send_full(&ack=0)
+  |                                   |
+  |  end = now()                      |
+  |  throughput = bytes / elapsed     |
+```
+
+**Why this ordering prevents measurement error:** The server receives all warmup messages in its own loop *before* entering the timed receive loop. By the time the server starts receiving timed messages, the warmup bytes have already been consumed. The server only sends the ACK after the timed batch is fully received. The client's timer spans only the timed send + server processing + ACK return — warmup transmission time is excluded.
+
+**Why one ACK per size:** The ACK serves as a batch delimiter. After each size's timed batch, the server signals "ready for next size" by sending the ACK. Without it, the client would have no way to know when the server has finished processing the current batch, and the protocol would desynchronize.
+
+---
+
 ## Design Decisions Summary
 
 | Decision | Rationale |
 |----------|-----------|
 | C++17 over C11 | `inline` variables, `std::size`, cleaner standard library |
+| `-O3` over `-O2` | Max optimization — measuring network, not compiler |
 | POSIX sockets over Boost.Asio | No external dependencies — standard on Linux |
-| One-time warmup over per-size | Eliminates timing skew; TCP window is per-connection |
+| Per-size warmup (100 msgs) | Lecturer guidance; handles unknown TCP dynamics per size |
+| Separate warmup/timed loops on server | Eliminates timing skew — timer never includes warmup |
 | `MSG_COUNTS` in header as `inline const` | Single source of truth, no ODR duplication |
 | `MSG_NOSIGNAL` on send | Prevents SIGPIPE from killing the process on disconnect |
 | `TCP_NODELAY` on client AND server | Prevents Nagle from delaying both data and ACKs |
 | Timer spans send + ACK wait | Measures network round-trip, not just local send rate |
+| ACK value = 0 (constant) | Value is never validated — computing it is wasted work |
 | Custom CHECK macro over assert | Tests work regardless of NDEBUG |
 | Compile-time + runtime bounds checks | Defense in depth — catches mismatches early |
