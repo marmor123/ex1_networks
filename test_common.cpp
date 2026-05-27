@@ -65,6 +65,14 @@ void test_compute_throughput_boundary_Mbps_to_Gbps() {
     printf("PASS: test_compute_throughput_boundary_Mbps_to_Gbps (%.2f %s)\n", r.value, r.unit.c_str());
 }
 
+void test_compute_throughput_zero_elapsed() {
+    // zero elapsed time should return 0 bps instead of inf
+    auto r = compute_throughput(1000, 1, 0.0);
+    assert(r.unit == "bps");
+    assert(std::fabs(r.value - 0.0) < 0.01);
+    printf("PASS: test_compute_throughput_zero_elapsed (%.2f %s)\n", r.value, r.unit.c_str());
+}
+
 int main() {
     test_generate_sizes_count();
     test_generate_sizes_powers_of_two();
@@ -74,6 +82,7 @@ int main() {
     test_compute_throughput_Mbps();
     test_compute_throughput_Gbps();
     test_compute_throughput_boundary_Mbps_to_Gbps();
+    test_compute_throughput_zero_elapsed();
     printf("All tests passed.\n");
     return 0;
 }

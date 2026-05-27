@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
+#include <signal.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -22,7 +23,8 @@ std::vector<size_t> generate_sizes() {
 }
 
 ThroughputResult compute_throughput(size_t msg_size, size_t msg_count, double elapsed_sec) {
-    double bits_per_sec = (msg_size * msg_count * 8.0) / elapsed_sec;
+    if (elapsed_sec <= 0.0) return {0.0, "bps"};
+    double bits_per_sec = (static_cast<double>(msg_size) * msg_count * 8.0) / elapsed_sec;
 
     if (bits_per_sec < 1000.0) {
         return {bits_per_sec, "bps"};
@@ -40,7 +42,7 @@ ssize_t send_full(int fd, const void* buf, size_t n) {
     size_t total = 0;
     const char* ptr = static_cast<const char*>(buf);
     while (total < n) {
-        ssize_t sent = send(fd, ptr + total, n - total, 0);
+        ssize_t sent = send(fd, ptr + total, n - total, MSG_NOSIGNAL);
         if (sent < 0) {
             if (errno == EINTR) continue;
             return -1;
@@ -74,7 +76,9 @@ int create_server_socket(int port) {
     }
 
     int opt = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt SO_REUSEADDR");
+    }
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -104,13 +108,21 @@ int create_client_socket(const char* ip, int port) {
     }
 
     int flag = 1;
-    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag)) < 0) {
+        perror("setsockopt TCP_NODELAY");
+    }
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(static_cast<uint16_t>(port));
 
-    if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
+    int pton_ret = inet_pton(AF_INET, ip, &addr.sin_addr);
+    if (pton_ret == 0) {
+        fprintf(stderr, "inet_pton: invalid address '%s'\n", ip);
+        close(fd);
+        return -1;
+    }
+    if (pton_ret < 0) {
         perror("inet_pton");
         close(fd);
         return -1;
