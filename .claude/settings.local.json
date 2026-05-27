@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(New-Item *)",
+      "PowerShell(g++ *)",
+      "PowerShell(& \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\" 2>&1; cl.exe 2>&1)",
+      "PowerShell(Out-Null *)",
+      "PowerShell(cmd.exe /c \"call `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat`\" && cl /std:c++17 /c C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\common.cpp /Fo:C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\common.obj\" 2>&1)",
+      "PowerShell(cmd.exe /c \"call `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat`\" && cl /std:c++17 /Fe:C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\test.exe C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\test_common.cpp C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\common.obj\" 2>&1)",
+      "PowerShell(cmd.exe /c \"C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\test.exe\")",
+      "PowerShell(cmd.exe /c \"call `\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat`\" && cl /std:c++17 /c C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\common.cpp /Fo:C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\common.obj && cl /std:c++17 /Fe:C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\test.exe C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\test_common.cpp C:\\\\Users\\\\marmo\\\\Downloads\\\\ex1_networks\\\\common.obj\" 2>&1)"
+    ]
+  }
+}
