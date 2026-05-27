@@ -4,11 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <string>
-
-#ifdef _WIN32
-#include <BaseTsd.h>
-typedef SSIZE_T ssize_t;
-#endif
+#include <sys/types.h>
 
 constexpr int DEFAULT_PORT = 12345;
 constexpr int LISTEN_BACKLOG = 5;

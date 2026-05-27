@@ -1,8 +1,5 @@
 #include "common.h"
 #include <cmath>
-
-#ifndef _WIN32
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
@@ -12,7 +9,6 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <cstdio>
-#endif
 
 std::vector<size_t> generate_sizes() {
     std::vector<size_t> sizes;
@@ -37,7 +33,6 @@ ThroughputResult compute_throughput(size_t msg_size, size_t msg_count, double el
     }
 }
 
-#ifndef _WIN32
 ssize_t send_full(int fd, const void* buf, size_t n) {
     size_t total = 0;
     const char* ptr = static_cast<const char*>(buf);
@@ -136,4 +131,3 @@ int create_client_socket(const char* ip, int port) {
 
     return fd;
 }
-#endif
