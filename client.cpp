@@ -1,7 +1,9 @@
 #include "common.h"
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <chrono>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -96,6 +98,7 @@ int main(int argc, char** argv) {
 
     const char* server_ip = argv[1];
     auto sizes = generate_sizes();
+    assert(sizes.size() == std::size(MSG_COUNTS));
 
     int fd = create_client_socket(server_ip, DEFAULT_PORT);
     if (fd < 0) {

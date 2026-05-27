@@ -1,8 +1,12 @@
 #include "common.h"
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <unistd.h>
 
 static_assert(sizeof(MSG_COUNTS) / sizeof(MSG_COUNTS[0]) == 21,
@@ -10,6 +14,7 @@ static_assert(sizeof(MSG_COUNTS) / sizeof(MSG_COUNTS[0]) == 21,
 
 int main() {
     auto sizes = generate_sizes();
+    assert(sizes.size() == std::size(MSG_COUNTS));
 
     int listen_fd = create_server_socket(DEFAULT_PORT);
     if (listen_fd < 0) {
@@ -27,6 +32,10 @@ int main() {
     }
 
     printf("Client connected\n");
+
+    // Disable Nagle on accepted socket for timely ACK delivery
+    int nodelay = 1;
+    setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 
     // One-time warmup: receive and discard to match client warmup
     char* warmup_buf = new char[WARMUP_SIZE];
