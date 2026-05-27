@@ -37,27 +37,25 @@ int main() {
     int nodelay = 1;
     setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 
-    // One-time warmup: receive and discard to match client warmup
-    char* warmup_buf = new char[WARMUP_SIZE];
-    memset(warmup_buf, 0, WARMUP_SIZE);
-    for (int w = 0; w < WARMUP_COUNT; w++) {
-        if (recv_full(client_fd, warmup_buf, WARMUP_SIZE) < 0) {
-            perror("warmup recv");
-            delete[] warmup_buf;
-            close(client_fd);
-            close(listen_fd);
-            return 1;
-        }
-    }
-    delete[] warmup_buf;
-
     for (size_t i = 0; i < sizes.size(); i++) {
         size_t size = sizes[i];
         size_t count = MSG_COUNTS[i];
 
+        // Receive warmup messages and discard (they exist only to open the TCP
+        // congestion window before the timed batch)
         char* buf = new char[size];
         memset(buf, 0, size);
+        for (int w = 0; w < WARMUP_MSGS; w++) {
+            if (recv_full(client_fd, buf, size) < 0) {
+                perror("warmup recv");
+                delete[] buf;
+                close(client_fd);
+                close(listen_fd);
+                return 1;
+            }
+        }
 
+        // Receive timed messages
         for (size_t j = 0; j < count; j++) {
             if (recv_full(client_fd, buf, size) < 0) {
                 perror("recv");
@@ -70,7 +68,9 @@ int main() {
 
         delete[] buf;
 
-        uint64_t ack = static_cast<uint64_t>(size) * count;
+        // ACK signals that all timed messages for this size have been received.
+        // The value is irrelevant — the client uses it purely as a sync barrier.
+        uint64_t ack = 0;
         if (send_full(client_fd, &ack, sizeof(ack)) < 0) {
             perror("send ack");
             close(client_fd);

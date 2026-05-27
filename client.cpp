@@ -25,7 +25,7 @@ static_assert(sizeof(MSG_COUNTS) / sizeof(MSG_COUNTS[0]) == 21,
  * must reconnect for each tested count.
  *
  * Output: <size> <count> (tab-separated), one line per message size.
- * Use these counts to populate MSG_COUNTS[] in common.cpp.
+ * Use these counts to populate MSG_COUNTS[] in common.h.
  */
 #include <cmath>
 
@@ -46,20 +46,17 @@ void find_counts(int fd) {
         memset(buf, 0, size);
 
         while (!converged && count <= 10000000) {
+            // Warm-up
+            for (int w = 0; w < WARMUP_MSGS; w++) {
+                if (send_full(fd, buf, size) < 0) { perror("send"); delete[] buf; return; }
+            }
+
             auto start = std::chrono::high_resolution_clock::now();
             for (size_t j = 0; j < count; j++) {
-                if (send_full(fd, buf, size) < 0) {
-                    perror("send");
-                    delete[] buf;
-                    return;
-                }
+                if (send_full(fd, buf, size) < 0) { perror("send"); delete[] buf; return; }
             }
             uint64_t ack = 0;
-            if (recv_full(fd, &ack, sizeof(ack)) < 0) {
-                perror("recv ack");
-                delete[] buf;
-                return;
-            }
+            if (recv_full(fd, &ack, sizeof(ack)) < 0) { perror("recv ack"); delete[] buf; return; }
             auto end = std::chrono::high_resolution_clock::now();
 
             double elapsed = std::chrono::duration<double>(end - start).count();
@@ -106,20 +103,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // One-time warmup: send large messages to saturate TCP slow-start window.
-    // The server receives and discards these before the timed batches begin.
-    char* warmup_buf = new char[WARMUP_SIZE];
-    memset(warmup_buf, 0, WARMUP_SIZE);
-    for (int w = 0; w < WARMUP_COUNT; w++) {
-        if (send_full(fd, warmup_buf, WARMUP_SIZE) < 0) {
-            perror("warmup send");
-            delete[] warmup_buf;
-            close(fd);
-            return 1;
-        }
-    }
-    delete[] warmup_buf;
-
     for (size_t i = 0; i < sizes.size(); i++) {
         size_t size = sizes[i];
         size_t count = MSG_COUNTS[i];
@@ -127,7 +110,20 @@ int main(int argc, char** argv) {
         char* buf = new char[size];
         memset(buf, 0, size);
 
-        // Timed batch: start timer, send all messages, wait for ACK, stop timer
+        // Warm-up: send messages to saturate TCP slow-start window.
+        // The server receives and discards these before the timed batch.
+        for (int w = 0; w < WARMUP_MSGS; w++) {
+            if (send_full(fd, buf, size) < 0) {
+                perror("warmup send");
+                delete[] buf;
+                close(fd);
+                return 1;
+            }
+        }
+
+        // Timed batch: start timer, send all messages, wait for ACK, stop timer.
+        // The timer spans the send + server processing + ACK return to measure
+        // the network round-trip, not just the local send rate.
         auto start = std::chrono::high_resolution_clock::now();
 
         for (size_t j = 0; j < count; j++) {
