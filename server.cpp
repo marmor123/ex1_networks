@@ -66,7 +66,6 @@ int main() {
             }
         }
 
-        delete[] buf;
 
         // ACK signals that all timed messages for this size have been received.
         // The value is irrelevant — the client uses it purely as a sync barrier.
@@ -78,7 +77,8 @@ int main() {
             return 1;
         }
     }
-
+  
+    delete[] buf;
     close(client_fd);
     close(listen_fd);
     return 0;
