@@ -44,28 +44,6 @@ ssize_t read_all(int fd, char* buf, size_t size) {
     return total_read;
 }
 
-bool server_dynamic_warmup(int client_fd, size_t size, char* buf) {
-    while (true) {
-        // 1. Receive chunk of messages
-        for (int i = 0; i < CHUNK_SIZE; ++i) {
-            if (recv_full(client_fd, buf, size) < 0) return false;
-        }
-
-        // 2. Send ACK to client
-        uint64_t ack = 1;
-        if (send_full(client_fd, &ack, sizeof(ack)) < 0) return false;
-
-        // 3. Receive control flag from client
-        uint64_t status = 0;
-        if (recv_full(client_fd, &status, sizeof(status)) < 0) return false;
-
-        // 4. Break the loop if client signaled Done (0)
-        if (status == 0) {
-            break; 
-        }
-    }
-    return true;
-}
 
 int main() {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -106,28 +84,6 @@ int main() {
         return 1;
     }
 
-    // char buffer[1024] = {0};
-    // ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-
-    // if (bytes_received < 0) {
-    //     std::cerr << "Receive failed" << std::endl;
-    //     return 1;
-    // } else if (bytes_received == 0) {
-    //     std::cout << "Client disconnected" << std::endl;
-    // } else {
-    //     buffer[bytes_received] = '\0';
-    //     std::cout << "Received: " << buffer << std::endl;
-    // }
-    
-    // const char* reply = "Hello from server!";
-    // ssize_t bytes_sent = send(client_fd, reply, strlen(reply), 0);
-
-    // if (bytes_sent < 0) {
-    //     std::cerr << "Send failed" << std::endl;
-    // }
-
-    // close(server_fd);
-
     int nodelay = 1;
     setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 
@@ -152,14 +108,12 @@ int main() {
         }
 
         // Receive timed messages
-        for (size_t j = 0; j < count; j++) {
-            if (read_all(client_fd, buf, size) < 0) {
-                perror("recv");
-                delete[] buf;
-                close(client_fd);
-                close(server_fd);
-                return 1;
-            }
+        if (read_all(client_fd, buf, size*count) < 0) {
+            perror("recv");
+            delete[] buf;
+            close(client_fd);
+            close(server_fd);
+            return 1;
         }
 
 
