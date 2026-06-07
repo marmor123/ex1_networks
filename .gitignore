@@ -5,3 +5,5 @@ test
 test.exe
 convergence_detector/conv_server
 convergence_detector/conv_client
+warmup_probe/warmup_server
+warmup_probe/warmup_client
