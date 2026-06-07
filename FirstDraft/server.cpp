@@ -84,6 +84,28 @@ int main() {
         return 1;
     }
 
+    // char buffer[1024] = {0};
+    // ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
+
+    // if (bytes_received < 0) {
+    //     std::cerr << "Receive failed" << std::endl;
+    //     return 1;
+    // } else if (bytes_received == 0) {
+    //     std::cout << "Client disconnected" << std::endl;
+    // } else {
+    //     buffer[bytes_received] = '\0';
+    //     std::cout << "Received: " << buffer << std::endl;
+    // }
+    
+    // const char* reply = "Hello from server!";
+    // ssize_t bytes_sent = send(client_fd, reply, strlen(reply), 0);
+
+    // if (bytes_sent < 0) {
+    //     std::cerr << "Send failed" << std::endl;
+    // }
+
+    // close(server_fd);
+
     int nodelay = 1;
     setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
 
@@ -108,12 +130,14 @@ int main() {
         }
 
         // Receive timed messages
-        if (read_all(client_fd, buf, size*count) < 0) {
-            perror("recv");
-            delete[] buf;
-            close(client_fd);
-            close(server_fd);
-            return 1;
+        for (size_t j = 0; j < count; j++) {
+            if (read_all(client_fd, buf, size) < 0) {
+                perror("recv");
+                delete[] buf;
+                close(client_fd);
+                close(server_fd);
+                return 1;
+            }
         }
 
 
