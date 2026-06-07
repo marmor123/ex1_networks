@@ -20,12 +20,13 @@ constexpr int DEFAULT_PORT   = 12345;
 constexpr int WARMUP_MSGS    = 100;
 constexpr int LISTEN_BACKLOG = 5;
 
+// Converged via convergence_detector (variance < 1 % between doubled counts)
 inline const size_t MSG_COUNTS[] = {
-    100000, 100000, 100000, 100000, 100000,  // 1B  2B  4B  8B  16B
-    100000, 100000, 50000,  50000,  50000,   // 32B 64B 128B 256B 512B
-    20000,  20000,  10000,  10000,  5000,    // 1KB 2KB 4KB 8KB 16KB
-    2000,   2000,   1000,   500,    200,     // 32KB 64KB 128KB 256KB 512KB
-    100,                                      // 1MB
+    1310720, 81920,  655360, 163840, 327680, // 1B  2B  4B  8B  16B
+    20480,   81920,  81920,  40960,  20480,   // 32B 64B 128B 256B 512B
+    20480,   20480,  20480,  2560,   2560,    // 1KB 2KB 4KB 8KB 16KB
+    2560,    640,    320,    160,    160,     // 32KB 64KB 128KB 256KB 512KB
+    80                                          // 1MB
 };
 
 // ---- inline helpers ----
