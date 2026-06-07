@@ -171,19 +171,19 @@ int main(int argc, char** argv) {
     const size_t BUF_SZ = 1ULL << 20;
     char* buf = new char[BUF_SZ];
 
-    printf("# Warmup-probe (single connection per size)\n");
+    printf("# Warmup-probe (single connection for all sizes)\n");
     printf("# Target variance: %.0f%%   Start: %zu   Max: %zu\n",
            TARGET_VAR * 100, WARMUP_START, WARMUP_MAX);
     printf("# Columns: size\twarmup_count\tthroughput_Mbps\tvariance_pct\n");
     fflush(stdout);
 
+    // One connection for the entire probe — matches real benchmark behaviour
+    int fd = connect_one(server_ip);
+    if (fd < 0) { delete[] buf; return 1; }
+
     for (size_t i = 0; i < sizes.size(); i++) {
         size_t size      = sizes[i];
         size_t timed_cnt = MSG_COUNTS[i];
-
-        // Connect once for all warmup levels of this size
-        int fd = connect_one(server_ip);
-        if (fd < 0) { delete[] buf; return 1; }
 
         size_t warmup    = WARMUP_START;
         double prev_tp   = 0.0;
@@ -217,14 +217,14 @@ int main(int argc, char** argv) {
                    size, warmup);
             fflush(stdout);
         }
-
-        // Signal end-of-connection, then close
-        uint64_t zero = 0;
-        send_all(fd, &zero, 8);   // size  = 0
-        send_all(fd, &zero, 8);   // warmup = 0
-        send_all(fd, &zero, 8);   // timed = 0 → server closes connection
-        close(fd);
     }
+
+    // Signal end-of-connection after all sizes
+    uint64_t zero = 0;
+    send_all(fd, &zero, 8);   // size  = 0
+    send_all(fd, &zero, 8);   // warmup = 0
+    send_all(fd, &zero, 8);   // timed = 0 → server closes connection
+    close(fd);
 
     delete[] buf;
     printf("\n# Done. Copy the warmup_count column into WARMUP_MSGS[].\n");
