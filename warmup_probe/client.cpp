@@ -1,14 +1,15 @@
-// Warmup-probe client — finds the minimum warmup count per message size
-// that produces stable throughput.  Reconnects per warmup level so each
-// test starts from a fresh TCP slow-start.
+// Warmup-probe client — one connection per size, all warmup levels for
+// that size run on the same connection (no reconnect between levels).
 //
 // Per-size algorithm:
 //   timed_count = MSG_COUNTS[i]  (fixed — already converged)
+//   Connect once.
 //   warmup = 2
 //   loop:
-//     connect → send warmup → timed batch → ACK → disconnect
+//     send headers → send warmup → timed batch → ACK
 //     if variance vs previous warmup level < 1 %: converged
 //     else: warmup *= 2
+//   Send count=0 to end connection.  Disconnect.  Next size.
 //
 // Output (tab-separated):
 //   size  warmup_count  throughput_Mbps  variance_pct
@@ -79,14 +80,10 @@ static inline ssize_t recv_all(int fd, void* buf, size_t n) {
     return static_cast<ssize_t>(total);
 }
 
-// Connect → run one (warmup + timed + ACK) cycle → disconnect
-static double run_one_cycle(const char* server_ip, size_t size,
-                            size_t warmup_cnt, size_t timed_cnt,
-                            char* buf, size_t buf_sz, bool* ok) {
-    *ok = false;
-
+// Connect a fresh socket for this size
+static int connect_one(const char* server_ip) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) { perror("socket"); return 0.0; }
+    if (fd < 0) { perror("socket"); return -1; }
 
     int flag = 1;
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
@@ -100,11 +97,20 @@ static double run_one_cycle(const char* server_ip, size_t size,
     addr.sin_port   = htons(DEFAULT_PORT);
     if (inet_pton(AF_INET, server_ip, &addr.sin_addr) <= 0) {
         fprintf(stderr, "inet_pton: invalid address '%s'\n", server_ip);
-        close(fd); return 0.0;
+        close(fd); return -1;
     }
     if (connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-        perror("connect"); close(fd); return 0.0;
+        perror("connect"); close(fd); return -1;
     }
+    return fd;
+}
+
+// Run one warmup-level cycle on the already-connected fd.
+// Returns elapsed seconds.
+static double run_one_cycle(int fd, size_t size, size_t warmup_cnt,
+                            size_t timed_cnt, char* buf, size_t buf_sz,
+                            bool* ok) {
+    *ok = false;
 
     // --- send headers ---
     uint64_t hdr_sz = static_cast<uint64_t>(size);
@@ -113,7 +119,7 @@ static double run_one_cycle(const char* server_ip, size_t size,
     if (send_all(fd, &hdr_sz, 8) < 0 ||
         send_all(fd, &hdr_w,  8) < 0 ||
         send_all(fd, &hdr_t,  8) < 0) {
-        perror("send header"); close(fd); return 0.0;
+        perror("send header"); return 0.0;
     }
 
     // --- batched warmup send ---
@@ -121,7 +127,7 @@ static double run_one_cycle(const char* server_ip, size_t size,
     while (remaining > 0) {
         size_t chunk = (remaining < buf_sz) ? remaining : buf_sz;
         if (send_all(fd, buf, chunk) < 0) {
-            perror("warmup send"); close(fd); return 0.0;
+            perror("warmup send"); return 0.0;
         }
         remaining -= chunk;
     }
@@ -135,7 +141,7 @@ static double run_one_cycle(const char* server_ip, size_t size,
             ssize_t s = send(fd, buf + total, size - total, MSG_NOSIGNAL);
             if (s < 0) {
                 if (errno == EINTR) continue;
-                perror("send"); close(fd); return 0.0;
+                perror("send"); return 0.0;
             }
             total += static_cast<size_t>(s);
         }
@@ -143,12 +149,11 @@ static double run_one_cycle(const char* server_ip, size_t size,
 
     uint64_t ack = 0;
     if (recv_all(fd, &ack, sizeof(ack)) < 0) {
-        perror("recv ack"); close(fd); return 0.0;
+        perror("recv ack"); return 0.0;
     }
 
     auto end = std::chrono::high_resolution_clock::now();
 
-    close(fd);
     *ok = true;
     return std::chrono::duration<double>(end - start).count();
 }
@@ -166,26 +171,29 @@ int main(int argc, char** argv) {
     const size_t BUF_SZ = 1ULL << 20;
     char* buf = new char[BUF_SZ];
 
-    printf("# Warmup-probe — per-size minimum warmup count\n");
+    printf("# Warmup-probe (single connection per size)\n");
     printf("# Target variance: %.0f%%   Start: %zu   Max: %zu\n",
            TARGET_VAR * 100, WARMUP_START, WARMUP_MAX);
     printf("# Columns: size\twarmup_count\tthroughput_Mbps\tvariance_pct\n");
     fflush(stdout);
 
     for (size_t i = 0; i < sizes.size(); i++) {
-        size_t size       = sizes[i];
-        size_t timed_cnt  = MSG_COUNTS[i];
-        size_t warmup     = WARMUP_START;
-        double prev_tp    = 0.0;
-        bool   converged  = false;
+        size_t size      = sizes[i];
+        size_t timed_cnt = MSG_COUNTS[i];
+
+        // Connect once for all warmup levels of this size
+        int fd = connect_one(server_ip);
+        if (fd < 0) { delete[] buf; return 1; }
+
+        size_t warmup    = WARMUP_START;
+        double prev_tp   = 0.0;
+        bool   converged = false;
 
         while (!converged && warmup <= WARMUP_MAX) {
             bool ok = false;
-            double elapsed = run_one_cycle(server_ip, size, warmup, timed_cnt,
+            double elapsed = run_one_cycle(fd, size, warmup, timed_cnt,
                                            buf, BUF_SZ, &ok);
-            if (!ok) {
-                delete[] buf; return 1;
-            }
+            if (!ok) { close(fd); delete[] buf; return 1; }
 
             double tp_mbps = (static_cast<double>(size) * timed_cnt * 8.0)
                              / elapsed / 1'000'000.0;
@@ -209,20 +217,12 @@ int main(int argc, char** argv) {
                    size, warmup);
             fflush(stdout);
         }
-    }
 
-    // --- shutdown server ---
-    {
-        int fd = socket(AF_INET, SOCK_STREAM, 0);
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port   = htons(DEFAULT_PORT);
-        inet_pton(AF_INET, server_ip, &addr.sin_addr);
-        connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        // Signal end-of-connection, then close
         uint64_t zero = 0;
-        send_all(fd, &zero, 8);   // size  = 0 (unused)
-        send_all(fd, &zero, 8);   // warmup = 0 (unused)
-        send_all(fd, &zero, 8);   // timed = 0 → server exits
+        send_all(fd, &zero, 8);   // size  = 0
+        send_all(fd, &zero, 8);   // warmup = 0
+        send_all(fd, &zero, 8);   // timed = 0 → server closes connection
         close(fd);
     }
 

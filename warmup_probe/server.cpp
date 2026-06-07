@@ -1,16 +1,15 @@
-// Warmup-probe server — accepts one connection per test cycle so each
-// warmup level starts from a fresh TCP slow-start.
+// Warmup-probe server — one connection per size, all warmup levels
+// for that size run on the same connection.
 //
-// Protocol (per connection):
+// Protocol per cycle:
 //   Client → Server:  uint64_t size
 //   Client → Server:  uint64_t warmup_count
-//   Client → Server:  uint64_t timed_count    (0 = shutdown server)
+//   Client → Server:  uint64_t timed_count    (0 = done with this connection)
 //   Client → Server:  warmup_count * size  bytes  (batched)
 //   Client → Server:  timed_count  * size  bytes  (batched)
 //   Server → Client:  uint64_t ack = 0
 //
-// The server stays alive across client reconnects so the probe client
-// can connect → test → disconnect → repeat for each warmup level.
+// Server loops: accept → handle-cycles-until-count=0 → close → accept again.
 
 #include <cstdio>
 #include <cerrno>
@@ -64,56 +63,54 @@ int main() {
 
     for (;;) {
         int client_fd = accept(server_fd, nullptr, nullptr);
-        if (client_fd < 0) {
-            perror("accept"); continue;
-        }
+        if (client_fd < 0) { perror("accept"); continue; }
 
         int nodelay = 1;
         setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
         int rcvbuf = 16 * 1024 * 1024;
         setsockopt(client_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
 
-        // --- read headers ---
-        uint64_t size_hdr = 0, warmup_hdr = 0, timed_hdr = 0;
-        if (recv_all(client_fd, &size_hdr,   sizeof(size_hdr))   < 0 ||
-            recv_all(client_fd, &warmup_hdr, sizeof(warmup_hdr)) < 0 ||
-            recv_all(client_fd, &timed_hdr,  sizeof(timed_hdr))  < 0) {
-            close(client_fd); continue;
-        }
-
-        if (timed_hdr == 0) {        // shutdown signal
-            close(client_fd); break;
-        }
-
-        size_t size        = static_cast<size_t>(size_hdr);
-        size_t warmup_cnt  = static_cast<size_t>(warmup_hdr);
-        size_t timed_cnt   = static_cast<size_t>(timed_hdr);
-
         uint64_t ack = 0;
 
-        // --- batched warmup recv ---
-        size_t remaining = warmup_cnt * size;
-        while (remaining > 0) {
-            size_t chunk = (remaining < BUF_SZ) ? remaining : BUF_SZ;
-            if (recv_all(client_fd, buf, chunk) < 0) {
-                perror("warmup recv"); goto close_conn;
+        for (;;) {
+            // --- read headers ---
+            uint64_t size_hdr = 0, warmup_hdr = 0, timed_hdr = 0;
+            if (recv_all(client_fd, &size_hdr,   sizeof(size_hdr))   < 0 ||
+                recv_all(client_fd, &warmup_hdr, sizeof(warmup_hdr)) < 0 ||
+                recv_all(client_fd, &timed_hdr,  sizeof(timed_hdr))  < 0) {
+                break;
             }
-            remaining -= chunk;
-        }
 
-        // --- batched timed recv ---
-        remaining = timed_cnt * size;
-        while (remaining > 0) {
-            size_t chunk = (remaining < BUF_SZ) ? remaining : BUF_SZ;
-            if (recv_all(client_fd, buf, chunk) < 0) {
-                perror("timed recv"); goto close_conn;
+            if (timed_hdr == 0) break;   // done with this connection
+
+            size_t size       = static_cast<size_t>(size_hdr);
+            size_t warmup_cnt = static_cast<size_t>(warmup_hdr);
+            size_t timed_cnt  = static_cast<size_t>(timed_hdr);
+
+            // --- batched warmup recv ---
+            size_t remaining = warmup_cnt * size;
+            while (remaining > 0) {
+                size_t chunk = (remaining < BUF_SZ) ? remaining : BUF_SZ;
+                if (recv_all(client_fd, buf, chunk) < 0) {
+                    perror("warmup recv"); goto close_conn;
+                }
+                remaining -= chunk;
             }
-            remaining -= chunk;
-        }
 
-        // --- ACK ---
-        if (send(client_fd, &ack, sizeof(ack), MSG_NOSIGNAL) < 0) {
-            perror("send ack"); goto close_conn;
+            // --- batched timed recv ---
+            remaining = timed_cnt * size;
+            while (remaining > 0) {
+                size_t chunk = (remaining < BUF_SZ) ? remaining : BUF_SZ;
+                if (recv_all(client_fd, buf, chunk) < 0) {
+                    perror("timed recv"); goto close_conn;
+                }
+                remaining -= chunk;
+            }
+
+            // --- ACK ---
+            if (send(client_fd, &ack, sizeof(ack), MSG_NOSIGNAL) < 0) {
+                perror("send ack"); goto close_conn;
+            }
         }
 
     close_conn:
