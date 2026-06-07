@@ -100,7 +100,7 @@ int main() {
         size_t size  = sizes[i];
         size_t count = MSG_COUNTS[i];
 
-        // Batched warmup recv — drain 100 messages in a single pass
+        // Batched warmup recv — drain all warmup messages in a single pass
         size_t remaining = WARMUP_COUNTS[i] * size;
         while (remaining > 0) {
             size_t chunk = (remaining < BUF_SZ) ? remaining : BUF_SZ;

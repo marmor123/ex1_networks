@@ -47,7 +47,7 @@ void find_counts(int fd) {
 
         while (!converged && count <= 10000000) {
             // Warm-up
-            for (size_t w = 0; w < WARMUP_COUNTS[i]; w++) {
+            for (int w = 0; w < 100; w++) {
                 if (send_full(fd, buf, size) < 0) { perror("send"); delete[] buf; return; }
             }
 
