@@ -17,7 +17,14 @@ std::vector<size_t> generate_sizes() {
 }
 
 constexpr int DEFAULT_PORT   = 12345;
-constexpr int WARMUP_MSGS    = 100;
+// Optimal warmup counts per size — from warmup_probe (variance < 1%)
+inline const size_t WARMUP_COUNTS[] = {
+    16, 4,  4,  32, 4,   // 1B  2B  4B  8B  16B
+    4,  4,  4,  4,  4,   // 32B 64B 128B 256B 512B
+    4,  4,  4,  4,  4,   // 1KB 2KB 4KB 8KB 16KB
+    4,  4,  4,  4,  4,   // 32KB 64KB 128KB 256KB 512KB
+    4                      // 1MB
+};
 constexpr int LISTEN_BACKLOG = 5;
 
 // Converged via convergence_detector (variance < 1 % between doubled counts)
@@ -94,7 +101,7 @@ int main() {
         size_t count = MSG_COUNTS[i];
 
         // Batched warmup recv — drain 100 messages in a single pass
-        size_t remaining = static_cast<size_t>(WARMUP_MSGS) * size;
+        size_t remaining = WARMUP_COUNTS[i] * size;
         while (remaining > 0) {
             size_t chunk = (remaining < BUF_SZ) ? remaining : BUF_SZ;
             if (recv_all(client_fd, buf, chunk) < 0) {

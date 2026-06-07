@@ -45,7 +45,7 @@ int main() {
         // congestion window before the timed batch)
         char* buf = new char[size];
         memset(buf, 0, size);
-        for (int w = 0; w < WARMUP_MSGS; w++) {
+        for (size_t w = 0; w < WARMUP_COUNTS[i]; w++) {
             if (recv_full(client_fd, buf, size) < 0) {
                 perror("warmup recv");
                 delete[] buf;

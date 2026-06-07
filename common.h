@@ -8,7 +8,14 @@
 
 constexpr int DEFAULT_PORT = 12345;
 constexpr int LISTEN_BACKLOG = 5;
-constexpr int WARMUP_MSGS = 100;          // per-size warmup messages to saturate TCP slow-start
+// Optimal warmup counts per size — from warmup_probe (variance < 1%)
+inline const size_t WARMUP_COUNTS[] = {
+    16, 4,  4,  32, 4,   // 1B  2B  4B  8B  16B
+    4,  4,  4,  4,  4,   // 32B 64B 128B 256B 512B
+    4,  4,  4,  4,  4,   // 1KB 2KB 4KB 8KB 16KB
+    4,  4,  4,  4,  4,   // 32KB 64KB 128KB 256KB 512KB
+    4                      // 1MB
+};
 
 std::vector<size_t> generate_sizes();
 

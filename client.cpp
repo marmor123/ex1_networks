@@ -47,7 +47,7 @@ void find_counts(int fd) {
 
         while (!converged && count <= 10000000) {
             // Warm-up
-            for (int w = 0; w < WARMUP_MSGS; w++) {
+            for (size_t w = 0; w < WARMUP_COUNTS[i]; w++) {
                 if (send_full(fd, buf, size) < 0) { perror("send"); delete[] buf; return; }
             }
 
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
 
         // Warm-up: send messages to saturate TCP slow-start window.
         // The server receives and discards these before the timed batch.
-        for (int w = 0; w < WARMUP_MSGS; w++) {
+        for (size_t w = 0; w < WARMUP_COUNTS[i]; w++) {
             if (send_full(fd, buf, size) < 0) {
                 perror("warmup send");
                 delete[] buf;
