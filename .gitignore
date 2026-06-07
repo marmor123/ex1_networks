@@ -3,3 +3,5 @@ client
 server
 test
 test.exe
+convergence_detector/conv_server
+convergence_detector/conv_client
