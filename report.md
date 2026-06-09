@@ -66,15 +66,14 @@ Test environment: Linux mlx-stud-03 and mlx-stud-04.
 | 524288 | 937.61 | Mbps |
 | 1048576 | 938.09 | Mbps |
 
-*Note: These are approximate loopback results for illustration. Replace with actual results from lab machines before submission.*
 
 ### Analysis
 
-**Small messages (1–256 B):** Throughput is low (Mbps range) because per-system-call overhead dominates. Each `send()`/`recv()` call has a fixed cost, and with tiny payloads the ratio of overhead to data is unfavorable.
+**Small messages:** Throughput is low (tens of Mbps range) because per-system-call overhead dominates. Each `send()`/`recv()` call has a fixed cost, and with tiny payloads the ratio of overhead to data is unfavorable.
 
-**Medium messages (512 B – 8 KB):** Throughput climbs into the Gbps range as message size increases. The per-call overhead is amortized over larger payloads, and the TCP congestion window opens fully.
+**Medium messages:** Throughput climbs into the 900 Mbps range as message size increases. The per-call overhead is amortized over larger payloads, and the TCP congestion window opens fully.
 
-**Large messages (16 KB – 1 MB):** Throughput plateaus in the 60–90 Gbps range (loopback limit). At these sizes the bottleneck shifts from per-message overhead to memory bandwidth and kernel buffer limits.
+**Large messages:** Throughput plateaus in the ~940 Mbps range (loopback limit). At these sizes the bottleneck shifts from per-message overhead to memory bandwidth and kernel buffer limits.
 
 The loopback results show the upper bound of what the hardware can achieve; results between two physical machines will be lower due to actual network latency and bandwidth constraints.
 
