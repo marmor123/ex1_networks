@@ -40,31 +40,31 @@ Compiled with `-O3` and `-Wall -Wextra` (zero warnings). Maximum optimization is
 
 ## Performance Results
 
-Test environment: Linux loopback (127.0.0.1), single machine.
+Test environment: Linux mlx-stud-03 and mlx-stud-04.
 
 | Message Size (bytes) | Throughput | Unit |
 |---------------------|------------|------|
-| 1 | 9.20 | Mbps |
-| 2 | 11.08 | Mbps |
-| 4 | 18.69 | Mbps |
-| 8 | 39.43 | Mbps |
-| 16 | 76.25 | Mbps |
-| 32 | ~100 | Mbps |
-| 64 | ~170 | Mbps |
-| 128 | ~300 | Mbps |
-| 256 | ~680 | Mbps |
-| 512 | ~1.3 | Gbps |
-| 1024 | ~2.5 | Gbps |
-| 2048 | ~5 | Gbps |
-| 4096 | ~13 | Gbps |
-| 8192 | ~25 | Gbps |
-| 16384 | ~40 | Gbps |
-| 32768 | ~60 | Gbps |
-| 65536 | ~60 | Gbps |
-| 131072 | ~70 | Gbps |
-| 262144 | ~90 | Gbps |
-| 524288 | ~70 | Gbps |
-| 1048576 | ~80 | Gbps |
+| 1 | 13.00 | Mbps |
+| 2 | 24.83 | Mbps |
+| 4 | 51.74 | Mbps |
+| 8 | 102.69 | Mbps |
+| 16 | 214.76 | Mbps |
+| 32 | 411.92 | Mbps |
+| 64 | 868.12 | Mbps |
+| 128 | 936.78 | Mbps |
+| 256 | 938.69 | Mbps |
+| 512 | 937.24 | Mbps |
+| 1024 | 939.39 | Mbps |
+| 2048 | 940.09 | Mbps |
+| 4096 | 940.58 | Mbps |
+| 8192 | 938.67 | Mbps |
+| 16384 | 939.01 | Mbps |
+| 32768 | 939.51 | Mbps |
+| 65536 | 934.99 | Mbps |
+| 131072 | 933.93 | Mbps |
+| 262144 |931.50 | Mbps |
+| 524288 | 937.61 | Mbps |
+| 1048576 | 938.09 | Mbps |
 
 *Note: These are approximate loopback results for illustration. Replace with actual results from lab machines before submission.*
 
