@@ -6,7 +6,6 @@ Measures unidirectional TCP throughput between two machines for message sizes ra
 
 ```bash
 make all      # builds server and client
-make test     # builds and runs unit tests
 make clean    # removes binaries
 ```
 
@@ -36,9 +35,10 @@ Units auto-scale: `bps`, `Kbps`, `Mbps`, or `Gbps`.
 
 | File | Purpose |
 |------|---------|
-| `common.h` / `common.cpp` | Shared socket utilities, throughput computation, message-size generation |
-| `server.cpp` | Listens, receives batches, sends acknowledgments |
-| `client.cpp` | Connects, sends timed batches, prints results |
-| `test_common.cpp` | Unit tests for pure functions |
+| `server.cpp` | Listens, accepts one connection, drains bytes in batched 1 MB chunks, sends ACKs |
+| `client.cpp` | Connects, sends warmup+timed batches per size, measures elapsed time, prints results |
 | `Makefile` | Build system |
-| `GUIDE.md` | Detailed walkthrough with rationale for every code section |
+| `convergence_detector/` | Tool to find optimal `MSG_COUNTS` values per message size |
+| `warmup_probe/` | Tool to find optimal `WARMUP_COUNTS` values per message size |
+| `Exercise_1_Performance_Measurements_TCP.md` | Lab report with methodology, design decisions, and results |
+| `FirstDraft/` | Reference implementation used as basis for current code |
