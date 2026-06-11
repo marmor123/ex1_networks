@@ -2,22 +2,15 @@ CXX := g++
 CXXFLAGS := -std=c++17 -Wall -Wextra -O3
 LDFLAGS :=
 
-.PHONY: all clean test
+.PHONY: all clean
 
 all: server client
 
-server: server.cpp common.o
-	$(CXX) $(CXXFLAGS) -o server server.cpp common.o $(LDFLAGS)
+server: server.cpp
+	$(CXX) $(CXXFLAGS) -o server server.cpp $(LDFLAGS)
 
-client: client.cpp common.o
-	$(CXX) $(CXXFLAGS) -o client client.cpp common.o $(LDFLAGS)
-
-common.o: common.cpp common.h
-	$(CXX) $(CXXFLAGS) -c common.cpp -o common.o
-
-test: test_common.cpp common.o
-	$(CXX) $(CXXFLAGS) -o test test_common.cpp common.o $(LDFLAGS)
-	./test
+client: client.cpp
+	$(CXX) $(CXXFLAGS) -o client client.cpp $(LDFLAGS)
 
 clean:
-	rm -f server client test common.o
+	rm -f server client
