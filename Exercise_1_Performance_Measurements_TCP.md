@@ -9,7 +9,17 @@ The benchmark consists of two standalone executables: `server` and `client`. The
 
 ### Architecture
 
-Both executables are **self-contained single-file programs** — all helper functions, constants, and protocol definitions are inlined. This avoids cross-translation-unit linkage overhead and ensures the compiler can fully inline the hot-path code. The convergence-detector and warmup-probe tools (used to calibrate `MSG_COUNTS` and `WARMUP_COUNTS`) live in their own subdirectories with their own Makefiles.
+Both executables are **self-contained single-file programs** — all shared definitions (`generate_sizes()`, `WARMUP_COUNTS[]`, `MSG_COUNTS[]`, `recv_all()`, `send_all()`, and configuration constants) are intentionally duplicated in `server.cpp` and `client.cpp` rather than extracted to a shared header.
+
+**Why duplicate instead of share?** The assignment asks to "share as much code as possible," and the natural approach would be a `common.h` / `common.cpp` shared library. However, we chose duplication for two performance reasons:
+
+1. **Inlining across the timer boundary:** The server's `recv_all()` work is on the clock — the client's timer runs until the ACK arrives. If `recv_all()` lived in a separate translation unit (e.g., `common.o`), the compiler could not inline it into the server's main loop without Link-Time Optimization (`-flto`). With `-O3` and the function defined `static inline` in the same file, the compiler inlines it directly — eliminating function-call overhead from every chunk receive.
+
+2. **Constant propagation:** `MSG_COUNTS[]` and `WARMUP_COUNTS[]` defined as `inline const` arrays in the same translation unit allow the compiler to see the exact values at compile time. When defined in a shared object file, the compiler must generate an indirect load through the GOT (Global Offset Table), adding a memory indirection on every array access in the hot loop.
+
+The tradeoff is deliberate: we accept ~60 lines of duplication to eliminate per-message overhead in the timed path. This is documented in the code comments and is the only intentional deviation from the assignment's code-sharing guidance.
+
+The convergence-detector and warmup-probe tools (used to calibrate `MSG_COUNTS` and `WARMUP_COUNTS`) live in their own subdirectories with their own Makefiles.
 
 ### File Structure
 

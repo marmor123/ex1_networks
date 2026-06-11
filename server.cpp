@@ -7,7 +7,23 @@
 #include <netinet/tcp.h>
 #include <unistd.h>
 
-// ---- shared definitions (duplicated — FirstDraft is standalone) ----
+// ---- shared definitions ----
+// These definitions are intentionally duplicated in server.cpp and client.cpp
+// (rather than extracted to a shared header) so the compiler can inline every
+// helper directly into the hot path at -O3.  No function-call or linkage
+// overhead across translation units — every cycle matters in a benchmark
+// whose timer spans the server's receive work.
+//
+// MSG_COUNTS[i]  — optimal number of timed messages per size, determined by
+//   the convergence_detector tool (see report §2.1).  We start with a small
+//   count and double until throughput variance between consecutive counts
+//   drops below 1 %.  The values here are the converged results.
+//
+// WARMUP_COUNTS[i] — optimal warmup messages per size, determined by the
+//   warmup_probe tool (see report §2.2).  We start with 2 warmup messages
+//   and double until throughput variance between consecutive warmup levels
+//   drops below 1 %.  These are the minimum warmup counts needed to fully
+//   open the TCP congestion window for each message size.
 
 std::vector<size_t> generate_sizes() {
     std::vector<size_t> sizes;
