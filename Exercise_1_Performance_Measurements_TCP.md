@@ -89,36 +89,41 @@ Disabled Nagle's algorithm on both sides to prevent the kernel from delaying sma
 
 ## 4. Performance Results
 
-Results below are from a **localhost loopback** test (WSL2 Ubuntu on Windows 11, g++ 13.3.0, `-O3`):
+Test environment: Linux mlx-stud-03 and mlx-stud-04 (1 Gbps Ethernet).
 
-| Message Size | Throughput | Unit |
-|-------------:|-----------:|------|
-| 1 | 2.48 | Mbps |
-| 2 | 4.78 | Mbps |
-| 4 | 9.22 | Mbps |
-| 8 | 18.79 | Mbps |
-| 16 | 37.06 | Mbps |
-| 32 | 70.21 | Mbps |
-| 64 | 140.46 | Mbps |
-| 128 | 288.02 | Mbps |
-| 256 | 591.70 | Mbps |
-| 512 | 1.16 | Gbps |
-| 1024 | 2.13 | Gbps |
-| 2048 | 4.29 | Gbps |
-| 4096 | 10.61 | Gbps |
-| 8192 | 30.45 | Gbps |
-| 16384 | 47.43 | Gbps |
-| 32768 | 37.16 | Gbps |
-| 65536 | 34.20 | Gbps |
-| 131072 | 22.62 | Gbps |
-| 262144 | 25.61 | Gbps |
-| 524288 | 27.89 | Gbps |
-| 1048576 | 27.89 | Gbps |
+| Message Size (bytes) | Throughput | Unit |
+|---------------------:|-----------:|------|
+| 1 | 13.00 | Mbps |
+| 2 | 24.83 | Mbps |
+| 4 | 51.74 | Mbps |
+| 8 | 102.69 | Mbps |
+| 16 | 214.76 | Mbps |
+| 32 | 411.92 | Mbps |
+| 64 | 868.12 | Mbps |
+| 128 | 936.78 | Mbps |
+| 256 | 938.69 | Mbps |
+| 512 | 937.24 | Mbps |
+| 1024 | 939.39 | Mbps |
+| 2048 | 940.09 | Mbps |
+| 4096 | 940.58 | Mbps |
+| 8192 | 938.67 | Mbps |
+| 16384 | 939.01 | Mbps |
+| 32768 | 939.51 | Mbps |
+| 65536 | 934.99 | Mbps |
+| 131072 | 933.93 | Mbps |
+| 262144 | 931.50 | Mbps |
+| 524288 | 937.61 | Mbps |
+| 1048576 | 938.09 | Mbps |
 
-**Observations:**
-- Throughput scales with message size for small messages (1 B–16 KB): larger messages mean fewer syscalls per byte transferred.
-- Throughput peaks at ~16 KB (47 Gbps) and plateaus around 20–40 Gbps for larger sizes — this is the WSL2 virtual network interface's practical ceiling on loopback.
-- Real hardware between two physical lab machines is expected to show lower peak throughput (limited by NIC speed, typically 1–10 Gbps) but the same scaling pattern.
+### Analysis
+
+**Small messages (1–64 B):** Throughput climbs from 13 Mbps to 868 Mbps as message size increases. Per-system-call overhead dominates at the smallest sizes — each `send()`/`recv()` call has a fixed cost, and with tiny payloads the ratio of overhead to data is unfavorable. Throughput roughly doubles with each doubling of payload size, which is the signature of a per-packet fixed-cost bottleneck.
+
+**Medium messages (128 B – 8 KB):** Throughput reaches the ~940 Mbps plateau. The per-call overhead is amortized over larger payloads, and the warm-up phase has already opened the TCP congestion window before timing begins.
+
+**Large messages (16 KB – 1 MB):** Throughput holds steady at ~940 Mbps — the 1 Gbps Ethernet link limit. At these sizes, per-message overhead is negligible and the NIC wire speed is the bottleneck.
+
+The ~940 Mbps ceiling is consistent with the expected throughput of a 1 Gbps Ethernet link between the two lab machines after accounting for TCP/IP and Ethernet framing overhead.
 
 ## 5. Build & Usage
 
