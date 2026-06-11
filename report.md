@@ -66,16 +66,15 @@ Test environment: Linux mlx-stud-03 and mlx-stud-04.
 | 524288 | 937.61 | Mbps |
 | 1048576 | 938.09 | Mbps |
 
-
 ### Analysis
 
-**Small messages:** Throughput is low (tens of Mbps range) because per-system-call overhead dominates. Each `send()`/`recv()` call has a fixed cost, and with tiny payloads the ratio of overhead to data is unfavorable.
+**Small messages (1–64 B):** Throughput climbs from 13 Mbps to 868 Mbps as message size increases. Per-system-call overhead dominates at the smallest sizes — each `send()`/`recv()` call has a fixed cost, and with tiny payloads the ratio of overhead to data is unfavorable. Throughput roughly doubles with each doubling of payload size, which is the signature of a per-packet fixed-cost bottleneck.
 
-**Medium messages:** Throughput climbs into the 900 Mbps range as message size increases. The per-call overhead is amortized over larger payloads, and the TCP congestion window opens fully.
+**Medium messages (128 B – 8 KB):** Throughput reaches the ~940 Mbps plateau. The per-call overhead is amortized over larger payloads, and the warm-up phase has already opened the TCP congestion window before timing begins.
 
-**Large messages:** Throughput plateaus in the ~940 Mbps range (loopback limit). At these sizes the bottleneck shifts from per-message overhead to memory bandwidth and kernel buffer limits.
+**Large messages (16 KB – 1 MB):** Throughput holds steady at ~940 Mbps — the 1 Gbps Ethernet link limit. At these sizes, per-message overhead is negligible and the NIC wire speed is the bottleneck.
 
-The loopback results show the upper bound of what the hardware can achieve; results between two physical machines will be lower due to actual network latency and bandwidth constraints.
+The ~940 Mbps ceiling is consistent with the expected throughput of a 1 Gbps Ethernet link between the two lab machines after accounting for TCP/IP and Ethernet framing overhead.
 
 ## Building and Running
 
